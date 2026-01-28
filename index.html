@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>SHOPPING X</title>
+
+<style>
+:root{
+ --primary:#0a8f3c;
+ --dark:#0a0a0a;
+}
+
+*{box-sizing:border-box}
+body{
+ margin:0;
+ font-family:Arial,Helvetica,sans-serif;
+ background:#f2f2f2;
+ color:#333
+}
+header{
+ background:var(--dark);
+ color:#fff;
+ padding:15px;
+ text-align:center
+}
+nav{
+ display:flex;
+ justify-content:space-around;
+ background:#fff;
+ border-bottom:1px solid #ddd;
+ padding:10px
+}
+nav span{
+ cursor:pointer;
+ font-weight:bold
+}
+.section{
+ display:none;
+ padding:15px
+}
+.active{display:block}
+
+/* PRODUTOS */
+.products{
+ display:grid;
+ grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+ gap:15px
+}
+.product{
+ background:#fff;
+ border-radius:10px;
+ padding:10px;
+ box-shadow:0 2px 6px rgba(0,0,0,.1)
+}
+.product img{
+ width:100%;
+ height:150px;
+ object-fit:cover;
+ border-radius:8px
+}
+.price{
+ color:var(--primary);
+ font-weight:bold
+}
+
+button{
+ width:100%;
+ padding:8px;
+ margin-top:6px;
+ border:none;
+ border-radius:6px;
+ background:var(--primary);
+ color:#fff;
+ cursor:pointer
+}
+.alt{background:#444}
+.admin{background:#b00020}
+
+.list{
+ background:#fff;
+ padding:10px;
+ border-radius:8px;
+ margin-bottom:10px;
+ box-shadow:0 1px 4px rgba(0,0,0,.1)
+}
+
+input,textarea{
+ width:100%;
+ padding:8px;
+ margin:6px 0
+}
+
+.status{font-weight:bold}
+.pendente{color:#c08a00}
+.pago{color:var(--primary)}
+.enviado{color:#0057a3}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>SHOPPING X</h1>
+<div id="userName"></div>
+</header>
+
+<nav>
+ <span onclick="show('products')">Produtos</span>
+ <span onclick="show('cart')">Carrinho</span>
+ <span onclick="show('orders')">Minhas Compras</span>
+ <span onclick="show('pending')">Pendentes</span>
+</nav>
+
+<!-- LOGIN -->
+<div id="login" class="section active">
+ <h3>Entrar na SHOPPING X</h3>
+ <button onclick="loginGoogle()">Entrar com Google</button>
+ <button onclick="loginFacebook()" class="alt">Entrar com Facebook</button>
+</div>
+
+<div id="products" class="section products"></div>
+<div id="cart" class="section"></div>
+<div id="orders" class="section"></div>
+<div id="pending" class="section"></div>
+
+<!-- ADMIN LOGIN -->
+<div id="adminLogin" class="section">
+ <h3>Painel Administrativo</h3>
+ <input id="aUser" placeholder="Usuário">
+ <input id="aPass" type="password" placeholder="Senha">
+ <button onclick="adminLogin()">Entrar</button>
+</div>
+
+<!-- ADMIN PAINEL -->
+<div id="adminPanel" class="section">
+ <h3>Novo Produto</h3>
+ <input id="pName" placeholder="Nome">
+ <input id="pPrice" placeholder="Preço">
+ <input id="pImg" placeholder="URL da imagem">
+ <textarea id="pDesc" placeholder="Descrição"></textarea>
+ <button onclick="addProduct()">Adicionar Produto</button>
+
+ <h3>Pedidos</h3>
+ <div id="adminOrders"></div>
+</div>
+
+<!-- FIREBASE -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
+<script>
+/* CONFIG */
+const WHATSAPP_NUMBER="5598988860437";
+const ADMIN_USER="admin";
+const ADMIN_PASS="silvajrd3son";
+const ADMIN_SECRET="#admin-silvajrd3son";
+
+/* FIREBASE (TROQUE PELOS SEUS DADOS) */
+firebase.initializeApp({
+ apiKey:"SUA_API_KEY",
+ authDomain:"SEU_PROJETO.firebaseapp.com",
+ projectId:"SEU_PROJETO",
+ appId:"SEU_APP_ID"
+});
+const auth=firebase.auth();
+
+/* DADOS */
+let products=JSON.parse(localStorage.getItem("products"))||[
+ {id:1,name:"Fone Bluetooth",price:79.9,img:"https://via.placeholder.com/300",desc:"Alta qualidade"}
+];
+let cart=JSON.parse(localStorage.getItem("cart")||"[]");
+let orders=JSON.parse(localStorage.getItem("orders")||"[]");
+
+/* UTIL */
+function save(){
+ localStorage.setItem("products",JSON.stringify(products));
+ localStorage.setItem("cart",JSON.stringify(cart));
+ localStorage.setItem("orders",JSON.stringify(orders));
+}
+
+function show(id){
+ document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
+ document.getElementById(id).classList.add("active");
+ if(id==="products")renderProducts();
+ if(id==="cart")renderCart();
+ if(id==="orders")renderOrders();
+ if(id==="pending")renderPending();
+ if(id==="adminPanel")renderAdminOrders();
+}
+
+/* LOGIN */
+function loginGoogle(){
+ auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+}
+function loginFacebook(){
+ auth.signInWithPopup(new firebase.auth.FacebookAuthProvider());
+}
+
+auth.onAuthStateChanged(user=>{
+ if(user){
+  const u={
+   uid:user.uid,
+   name:user.displayName,
+   email:user.email
+  };
+  localStorage.setItem("user",JSON.stringify(u));
+  document.getElementById("userName").innerText="Olá, "+u.name;
+  show("products");
+ }else{
+  localStorage.removeItem("user");
+  show("login");
+ }
+});
+
+/* PRODUTOS */
+const productsDiv=document.getElementById("products");
+function renderProducts(){
+ productsDiv.innerHTML=products.map(p=>`
+ <div class="product">
+  <img src="${p.img}">
+  <h4>${p.name}</h4>
+  <div class="price">R$ ${p.price.toFixed(2)}</div>
+  <button onclick="addCart(${p.id})">Adicionar ao carrinho</button>
+ </div>`).join("");
+}
+
+function addCart(id){
+ if(!localStorage.getItem("user")){
+  alert("Faça login para comprar");
+  show("login");
+  return;
+ }
+ cart.push(products.find(p=>p.id===id));
+ save();
+ alert("Produto adicionado");
+}
+
+/* CARRINHO */
+const cartDiv=document.getElementById("cart");
+function renderCart(){
+ if(!cart.length){
+  cartDiv.innerHTML="Carrinho vazio";
+  return;
+ }
+ let total=0;
+ cartDiv.innerHTML=cart.map((p,i)=>{
+  total+=p.price;
+  return `<div class="list">
+   ${p.name} - R$ ${p.price.toFixed(2)}
+   <button class="alt" onclick="removeCart(${i})">Remover</button>
+  </div>`;
+ }).join("")+
+ `<div class="list">
+  <b>Total: R$ ${total.toFixed(2)}</b>
+  <button onclick="finishBuy()">Finalizar compra</button>
+ </div>`;
+}
+
+function removeCart(i){
+ cart.splice(i,1);
+ save();
+ renderCart();
+}
+
+/* FINALIZAR */
+function finishBuy(){
+ const user=JSON.parse(localStorage.getItem("user"));
+ if(!user){
+  show("login");
+  return;
+ }
+
+ let txt="Olá, quero comprar:\n";
+ let total=0;
+
+ cart.forEach(p=>{
+  txt+=`${p.name} - R$ ${p.price.toFixed(2)}\n`;
+  total+=p.price;
+ });
+
+ txt+=`Total: R$ ${total.toFixed(2)}`;
+
+ orders.push({
+  userId:user.uid,
+  userName:user.name,
+  items:[...cart],
+  total,
+  status:"PENDENTE"
+ });
+
+ cart=[];
+ save();
+
+ window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(txt)}`);
+}
+
+/* PEDIDOS DO USUÁRIO */
+const ordersDiv=document.getElementById("orders");
+function renderOrders(){
+ const user=JSON.parse(localStorage.getItem("user"));
+ if(!user){
+  ordersDiv.innerHTML="Faça login para ver seus pedidos";
+  return;
+ }
+
+ const userOrders=orders.filter(o=>o.userId===user.uid);
+ if(!userOrders.length){
+  ordersDiv.innerHTML="Nenhum pedido encontrado";
+  return;
+ }
+
+ ordersDiv.innerHTML=userOrders.map(o=>`
+ <div class="list">
+  Produtos: ${o.items.map(i=>i.name).join(", ")}<br>
+  Total: R$ ${o.total.toFixed(2)}<br>
+  Status: <span class="status ${o.status.toLowerCase()}">${o.status}</span>
+ </div>`).join("");
+}
+
+/* PENDENTES */
+const pendingDiv=document.getElementById("pending");
+function renderPending(){
+ const user=JSON.parse(localStorage.getItem("user"));
+ if(!user){pendingDiv.innerHTML="";return;}
+ pendingDiv.innerHTML=orders
+ .filter(o=>o.userId===user.uid && o.status==="PENDENTE")
+ .map(o=>`<div class="list">Total: R$ ${o.total.toFixed(2)}</div>`).join("");
+}
+
+/* ADMIN */
+function adminLogin(){
+ if(aUser.value===ADMIN_USER && aPass.value===ADMIN_PASS){
+  show("adminPanel");
+ }else alert("Senha incorreta");
+}
+
+function addProduct(){
+ products.push({
+  id:Date.now(),
+  name:pName.value,
+  price:Number(pPrice.value),
+  img:pImg.value,
+  desc:pDesc.value
+ });
+ save();
+ alert("Produto adicionado");
+}
+
+const adminOrders=document.getElementById("adminOrders");
+function renderAdminOrders(){
+ adminOrders.innerHTML=orders.map((o,i)=>`
+ <div class="list">
+  Cliente: ${o.userName}<br>
+  Total: R$ ${o.total.toFixed(2)}<br>
+  Status: ${o.status}<br>
+  <button onclick="setStatus(${i},'PAGO')">Marcar pago</button>
+  <button class="alt" onclick="setStatus(${i},'ENVIADO')">Marcar enviado</button>
+ </div>`).join("");
+}
+
+function setStatus(i,s){
+ orders[i].status=s;
+ save();
+ renderAdminOrders();
+}
+
+/* LINK SECRETO ADMIN */
+if(location.hash===ADMIN_SECRET){
+ show("adminLogin");
+}
+</script>
+
+</body>
+</html>
